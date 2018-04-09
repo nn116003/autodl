@@ -82,27 +82,32 @@ class PredHolder(object):
     def add_conf_mat(self):
         pass
 
-    def add_wrong_imgs(self, iter_idx, max_num=10, size=(72, 72), name='Image'):
+    def add_wrong_imgs(self, iter_idx, max_num=3, size=(250, 250), name='Image'):
         _, pred = self.val["pred"].max(dim=1)
-        correct = pred.eq(self.val["ans"]).numpy()
+        correct = pred.eq(self.val["ans"]).numpy().astype(bool)
         wrong_pathes = np.array(self.val["path"])[~correct]
-        use_pathes = np.random.choice(wrong_pathes, max_num)
-
-        batch = np.zeros((max_num, 3, size[0], size[1]))
+        use_pathes = np.random.choice(wrong_pathes, max_num, replace=False)
+        
+        batch = np.zeros((max_num, 3, size[0], size[1])).astype(int)
         for i, path in enumerate(use_pathes):
-            img = Image.open(path).resize(size).convert('RGB')
+            print(path)
+            img = Image.open(path).convert('RGB').resize(size)
             img_arr = np.array(img).transpose((2,0,1))
             batch[i] = img_arr
             
-        grid = vutils.make_grid(torch.from_numpy(batch), normalize=False, scale_each=False)
-        self.writer.add_image(name, grid, iter_idx)
+        grid = vutils.make_grid(torch.from_numpy(batch))
+        
+        self.writer.add_image(name, grid.numpy().transpose((1,2,0)).astype(np.uint8), iter_idx)
     
     def add_all(self):
         pass
 
-    def save_data(self, logdir="./runs"):
-        prob = self.val["pred"].numpy()
-        ans = self.val["ans"].numpy()
+    def save_data(self, outdir="./"):
+        prob = pd.DataFrame(self.val["pred"].numpy())
+        ans_path = pd.DataFrame({"ans":self.val["ans"].numpy(), "path":self.val["path"]})
+        res = pd.concat((prob, ans_path), axis=1)
+        res.to_csv(outdir + "latest_res.csv", index=False)
+        
         
 
     def reset_val(self):

@@ -19,6 +19,10 @@ from tensorboardX import SummaryWriter
 import pandas as pd
 import numpy as np
 
+from utils.tb_utils import PredHolder
+from utils.utils import *
+from utils.datasets import ImageFolderWithPath
+
 writer = SummaryWriter()
 
 model_names = sorted(name for name in models.__dict__
@@ -70,7 +74,7 @@ best_prec1 = 0
 def main():
     global args, best_prec1
     args = parser.parse_args()
-
+    
     args.distributed = args.world_size > 1
 
     if args.distributed:
@@ -133,9 +137,6 @@ def main():
             normalize,
         ]))
 
-    pd.DataFrame({"id":np.arange(args.num_classes),
-                  "name":train_dataset.classes}).to_csv("./lab_ref.csv", index=False)
-    
 
     if args.distributed:
         train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
@@ -146,16 +147,36 @@ def main():
         train_dataset, batch_size=args.batch_size, shuffle=(train_sampler is None),
         num_workers=args.workers, pin_memory=True, sampler=train_sampler)
 
-    val_loader = torch.utils.data.DataLoader(
-        datasets.ImageFolder(valdir, transforms.Compose([
+    val_dataset = ImageFolderWithPath(
+        valdir,
+        transforms.Compose([
             transforms.Resize(256),
             transforms.CenterCrop(224),
             transforms.ToTensor(),
             normalize,
-        ])),
+        ]))
+    val_loader = torch.utils.data.DataLoader(
+        val_dataset,
         batch_size=args.batch_size, shuffle=False,
         num_workers=args.workers, pin_memory=True)
 
+    
+    # label to cat-name
+    labels_df = pd.DataFrame({"id":np.arange(args.num_classes),
+                  "name":train_dataset.classes})
+    labels_df.to_csv("./lab_ref.csv", index=False)
+    lab_ref_dict = labels_df.sort_values(by=["id"], ascending=True)['name'].values
+
+    # tensorboad writer
+    train_writer = PredHolder(writer, args.num_classes,
+                              lab_ref_dict = lab_ref_dict,
+                              hold_num = args.batch_size * args.print_freq)
+    val_writer = PredHolder(writer, args.num_classes,
+                            lab_ref_dict = lab_ref_dict,
+                            hold_num = len(val_dataset))
+
+
+    
     if args.evaluate:
         validate(val_loader, model, criterion, epoch=0)
         return
@@ -166,10 +187,10 @@ def main():
         adjust_learning_rate(optimizer, epoch)
 
         # train for one epoch
-        train(train_loader, model, criterion, optimizer, epoch)
+        train(train_loader, model, criterion, optimizer, epoch, train_writer)
 
         # evaluate on validation set
-        prec1 = validate(val_loader, model, criterion, epoch)
+        prec1 = validate(val_loader, model, criterion, epoch, val_writer)
 
         # remember best prec@1 and save checkpoint
         is_best = prec1 > best_prec1
@@ -183,7 +204,7 @@ def main():
         }, is_best)
 
 
-def train(train_loader, model, criterion, optimizer, epoch):
+def train(train_loader, model, criterion, optimizer, epoch, train_writer):
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()
@@ -210,9 +231,10 @@ def train(train_loader, model, criterion, optimizer, epoch):
         prec1 = accuracy(output.data, target)[0]
         top1.update(prec1[0], input.size(0))
         losses.update(loss.data[0], input.size(0))
-        writer.add_scalar('data/train_loss', loss.data[0], i + epoch*len(train_loader))
-        writer.add_scalar('data/train_acc', prec1[0], i + epoch*len(train_loader))
 
+        # update data for tensorborad
+        train_writer.update_pred_ans_loss(output.data.cpu(), target, loss.data[0])
+        
         # compute gradient and do SGD step
         optimizer.zero_grad()
         loss.backward()
@@ -223,6 +245,10 @@ def train(train_loader, model, criterion, optimizer, epoch):
         end = time.time()
 
         if i % args.print_freq == 0:
+            train_writer.add_loss(i + len(train_loader)*(epoch - 1))
+            train_writer.add_acc(i + len(train_loader)*(epoch - 1))
+#            train_writer.add_p_r(i + len(train_loader)*(epoch - 1))
+            train_writer.reset_val()
             print('Epoch: [{0}][{1}/{2}]\t'
                   'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
                   'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
@@ -231,8 +257,9 @@ def train(train_loader, model, criterion, optimizer, epoch):
                    epoch, i, len(train_loader), batch_time=batch_time,
                       data_time=data_time, loss=losses, top1=top1))
 
+    writer.add_graph(model, (input_var, ))
 
-def validate(val_loader, model, criterion, epoch):
+def validate(val_loader, model, criterion, epoch, val_writer):
     batch_time = AverageMeter()
     losses = AverageMeter()
     top1 = AverageMeter()
@@ -241,7 +268,7 @@ def validate(val_loader, model, criterion, epoch):
     model.eval()
 
     end = time.time()
-    for i, (input, target) in enumerate(val_loader):
+    for i, ((input, target), path) in enumerate(val_loader):
         target = target.cuda(async=True)
         input_var = torch.autograd.Variable(input, volatile=True)
         target_var = torch.autograd.Variable(target, volatile=True)
@@ -256,6 +283,7 @@ def validate(val_loader, model, criterion, epoch):
         writer.add_scalar('data/val_acc', prec1[0], epoch)
         top1.update(prec1[0], input.size(0))
         losses.update(loss.data[0], input.size(0))
+        val_writer.update_pred_ans_loss(output.data.cpu(), target, loss.data[0], path)
 
         # measure elapsed time
         batch_time.update(time.time() - end)
@@ -272,6 +300,15 @@ def validate(val_loader, model, criterion, epoch):
     print(' * Prec@1 {top1.avg:.3f}'
           .format(top1=top1))
 
+    val_writer.add_loss(epoch, name="data/val_loss")
+    val_writer.add_acc(epoch, name="data/val_acc")
+    val_writer.add_p_r(epoch,
+                       p_name="data/val_precision_per_class",
+                       r_name="data/val_recall_per_class")
+    val_writer.add_wrong_imgs(0) # store only latest img
+    val_writer.save_data()
+    val_writer.reset_val()
+    
     return top1.avg
 
 
@@ -281,46 +318,11 @@ def save_checkpoint(state, is_best, filename='checkpoint.pth.tar'):
         shutil.copyfile(filename, 'model_best.pth.tar')
 
 
-class AverageMeter(object):
-    """Computes and stores the average and current value"""
-    def __init__(self):
-        self.reset()
-
-    def reset(self):
-        self.val = 0
-        self.avg = 0
-        self.sum = 0
-        self.count = 0
-
-    def update(self, val, n=1):
-        self.val = val
-        self.sum += val * n
-        self.count += n
-        self.avg = self.sum / self.count
-
-
 def adjust_learning_rate(optimizer, epoch):
     """Sets the learning rate to the initial LR decayed by 10 every 30 epochs"""
     lr = args.lr * (0.1 ** (epoch // 30))
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
-
-
-def accuracy(output, target, topk=(1,)):
-    """Computes the precision@k for the specified values of k"""
-    maxk = max(topk)
-    batch_size = target.size(0)
-
-    _, pred = output.topk(maxk, 1, True, True)
-    pred = pred.t()
-    correct = pred.eq(target.view(1, -1).expand_as(pred))
-
-    res = []
-    for k in topk:
-        correct_k = correct[:k].view(-1).float().sum(0, keepdim=True)
-        res.append(correct_k.mul_(100.0 / batch_size))
-    return res
-
-
+        
 if __name__ == '__main__':
     main()
