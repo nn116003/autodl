@@ -61,7 +61,7 @@ def classify_url():
     try:
         string_buffer = io.BytesIO(
             urllib.request.urlopen(imageurl).read())
-        image = default_loader(string_buffer)
+        image = default_loader(string_buffer) # 0-255
 
     except Exception as err:
         # For any exception we encounter in reading the image, we will just
@@ -88,7 +88,7 @@ def classify_upload():
         filename = os.path.join(UPLOAD_FOLDER, filename_)
         imagefile.save(filename)
         logging.info('Saving to %s.', filename)
-        image = default_loader(imagefile)
+        image = default_loader(imagefile) # 0-255
 
     except Exception as err:
         logging.info('Uploaded image open error: %s', err)
@@ -143,6 +143,8 @@ class ImagenetClassifier(object):
             checkpoint = torch.load(pretrained_model_file)
             self.net.load_state_dict(checkpoint['state_dict'])
 
+        self.net.eval()
+            
         labels_df = pd.read_csv(class_labels_file)
         self.labels = labels_df.sort_values(by=["id"], ascending=True)['name'].values
 
@@ -160,7 +162,7 @@ class ImagenetClassifier(object):
             checkpoint = torch.load(pretrained_model_file)
             self.net.load_state_dict(checkpoint['state_dict'])
 
-    def classify_image(self, image):
+    def classify_image(self, image):# image PIL.Image 0-255
         try:
             starttime = time.time()
             input_img = torch.autograd.Variable(self.preprocess(image).unsqueeze(0))
