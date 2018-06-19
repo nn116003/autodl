@@ -36,3 +36,11 @@ class AverageMeter(object):
         self.count += n
         self.avg = self.sum / self.count
 
+
+def pred_ans_text(pred_id, ans_id, lab_ref_dict):
+    pred_name = lab_ref_dict[pred_id]
+    ans_name = lab_ref_dict[ans_id]
+    return 'pred:' + pred_name, 'ans:' + ans_name
+    
+
+

@@ -47,7 +47,7 @@ parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
                     help='manual epoch number (useful on restarts)')
 parser.add_argument('-b', '--batch-size', default=256, type=int,
                     metavar='N', help='mini-batch size (default: 256)')
-parser.add_argument('--lr', '--learning-rate', default=0.1, type=float,
+parser.add_argument('--lr', '--learning-rate', default=0.01, type=float,
                     metavar='LR', help='initial learning rate')
 parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
                     help='momentum')
@@ -84,7 +84,11 @@ def main():
     # create model
     if args.pretrained:
         print("=> using pre-trained model '{}'".format(args.arch))
-        model = models.__dict__[args.arch](pretrained=True, num_classes=args.num_classes)
+        if "resnet" in args.arch:
+            model = models.__dict__[args.arch](pretrained=True)
+            model.fc = torch.nn.Linear(model.fc.in_features, args.num_classes)
+        else:
+            model = models.__dict__[args.arch](pretrained=True, num_classes=args.num_classes)
     else:
         print("=> creating model '{}'".format(args.arch))
         model = models.__dict__[args.arch](num_classes=args.num_classes)
@@ -128,13 +132,13 @@ def main():
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                      std=[0.229, 0.224, 0.225])
 
-    train_dataset = datasets.ImageFolder(
+    train_dataset = datasets.ImageFolder( # input: 0-255(PIL Image.load)
         traindir,
         transforms.Compose([
             transforms.RandomResizedCrop(224),
             transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            normalize,
+            transforms.ToTensor(), # 0-1
+            normalize, # nomalize
         ]))
 
 
@@ -178,7 +182,7 @@ def main():
 
     
     if args.evaluate:
-        validate(val_loader, model, criterion, epoch=0)
+        validate(val_loader, model, criterion, epoch=0, val_writer=val_writer)
         return
 
     for epoch in range(args.start_epoch, args.epochs):
@@ -306,7 +310,7 @@ def validate(val_loader, model, criterion, epoch, val_writer):
                        p_name="data/val_precision_per_class",
                        r_name="data/val_recall_per_class")
     val_writer.add_wrong_imgs(0) # store only latest img
-    val_writer.save_data()
+#    val_writer.save_data()
     val_writer.reset_val()
     
     return top1.avg

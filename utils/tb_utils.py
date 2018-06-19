@@ -7,7 +7,7 @@ import torch.nn as nn
 from .utils import *
 
 import torchvision.utils as vutils
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 
 # TODO last batch
 
@@ -82,16 +82,46 @@ class PredHolder(object):
     def add_conf_mat(self):
         pass
 
-    def add_wrong_imgs(self, iter_idx, max_num=3, size=(250, 250), name='Image'):
+    def add_wrong_imgs(self, iter_idx, max_num=32, size=(125, 125), text_tl=(0,0), name='Image'):
+        
+        font = ImageFont.load_default()
+        
         _, pred = self.val["pred"].max(dim=1)
         correct = pred.eq(self.val["ans"]).numpy().astype(bool)
-        wrong_pathes = np.array(self.val["path"])[~correct]
-        use_pathes = np.random.choice(wrong_pathes, max_num, replace=False)
+
+        result_df = pd.DataFrame({"path":np.array(self.val["path"]),
+                                  "pred":pred.numpy(),
+                                  "ans":self.val["ans"].numpy()})
+        wrong_df = result_df.iloc[~correct]
         
-        batch = np.zeros((max_num, 3, size[0], size[1])).astype(int)
-        for i, path in enumerate(use_pathes):
-            print(path)
-            img = Image.open(path).convert('RGB').resize(size)
+        if wrong_df.shape[0] < max_num:
+            use_df = wrong_df
+        else:
+            idx = np.arange(wrong_df.shape[0])
+            use_idx = np.random.choice(idx, max_num, replace=False)
+            use_df = wrong_df.iloc[use_idx]
+
+        use_df.reset_index(inplace=True)
+            
+        use_img_num = use_df.shape[0]
+        batch = np.zeros((use_img_num, 3, size[0], size[1])).astype(int)
+
+        font = ImageFont.load_default()
+        
+        for i in range(use_img_num):
+            img = Image.open(use_df.path[i]).convert('RGB').resize(size)
+            
+            # add pred-lab and ans-lab text to a image
+            d = ImageDraw.Draw(img)
+            p_text, a_text = pred_ans_text(
+                use_df.pred[i], use_df.ans[i], self.lab_ref_dict)
+            w, h = font.getsize(p_text)
+            d.rectangle((text_tl[0], text_tl[1], text_tl[0] + w, text_tl[1] + h), fill="black")
+            d.text(text_tl, p_text, (255,255,255), font=font)
+            aw, ah = font.getsize(a_text)
+            d.rectangle((text_tl[0], text_tl[1] + h, text_tl[0] + aw, text_tl[1] + ah + h), fill="black")
+            d.text((text_tl[0], text_tl[1] + h), a_text, (255,255,255), font=font)
+            
             img_arr = np.array(img).transpose((2,0,1))
             batch[i] = img_arr
             
