@@ -55,4 +55,6 @@ def folder_split(data_dir, split_output="./",
 
 if __name__ == "__main__":
     mkdir("result")
-    folder_split("./data/train", train_dir = "./data/train2", val_dir = "./data/val2", test_dir = "./data/test")
+    import sys
+    args = sys.argv
+    folder_split(args[1], train_dir = "./data/train", val_dir = "./data/val", test_dir = "./data/test")
