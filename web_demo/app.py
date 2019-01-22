@@ -142,7 +142,7 @@ def start_from_terminal(app):
     parser.add_argument(
         '-g', '--gpu',
         help="use gpu mode",
-        action='store_true', default=True)
+        action='store_true', default=False)
     parser.add_argument(
         '-ap', '--api',
         help="api mode",

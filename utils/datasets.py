@@ -1,11 +1,32 @@
 import torchvision.datasets as datasets
 import torch.utils.data as data
 
+import pathlib
+
 import pandas as pd
 
 from PIL import Image
 
 import os
+
+class ImageFolderWithPathNoLabel(data.Dataset):
+    def __init__(self, datadir, transform=None):
+        self.pathes = list(pathlib.Path(datadir).iterdir())
+        self.transform = transform
+
+    def __getitem__(self, index):
+        path = str(self.pathes[index])
+        
+        sample = Image.open(path).convert('RGB')
+        
+        if self.transform is not None:
+            sample = self.transform(sample)
+
+        return sample, path
+
+    def __len__(self):
+        return len(self.pathes)
+        
 
 class ImageFolderWithPath(datasets.ImageFolder):
     def __getitem__(self, index):

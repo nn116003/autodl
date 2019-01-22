@@ -64,7 +64,7 @@ class PredHolder(object):
         ans_cat = pd.Categorical(self.val["ans"].numpy(), categories=np.arange(l).astype(int))
         pred_cat = pd.Categorical(pred_idx.numpy(), categories=np.arange(l).astype(int))
         
-        conf_mat = pd.crosstab(pred_cat, ans_cat) # pred * ans
+        conf_mat = pd.crosstab(pred_cat, ans_cat, dropna=False) # pred * ans
         correct_num = np.diag(conf_mat)
         ps = correct_num.astype(float) / (conf_mat.sum(axis=1) + 1e-10)
         rs = correct_num.astype(float) / (conf_mat.sum(axis=0) + 1e-10)
@@ -126,8 +126,9 @@ class PredHolder(object):
             batch[i] = img_arr
             
         grid = vutils.make_grid(torch.from_numpy(batch))
-        
-        self.writer.add_image(name, grid.numpy().transpose((1,2,0)).astype(np.uint8), iter_idx)
+
+        #self.writer.add_image(name, grid.numpy().transpose((1,2,0)).astype(np.uint8), iter_idx)
+        self.writer.add_image(name, grid.numpy().astype(np.uint8), iter_idx)
     
     def add_all(self):
         pass

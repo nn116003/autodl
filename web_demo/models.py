@@ -30,15 +30,18 @@ class ImageClassifier(object):
     def __init__(self, num_classes, arch,
                  class_labels_file, gpu_mode=True, pretrained_model_file=None):
         logging.info('Loading net and associated files...')
-        self.net = models.__dict__[arch](num_classes = num_classes)
+        self.net = torch.nn.DataParallel(models.__dict__[arch](num_classes = num_classes))
 
         if gpu_mode:
-            self.net = torch.nn.DataParallel(self.net).cuda()
+            self.net.cuda()
         
         if os.path.exists(pretrained_model_file):
-            checkpoint = torch.load(pretrained_model_file)
-            self.net.load_state_dict(checkpoint['state_dict'])
+           if gpu_mode:
+               checkpoint = torch.load(pretrained_model_file)
+           else:
+               checkpoint = torch.load(pretrained_model_file, map_location='cpu')
 
+            
         self.net.eval()
             
         labels_df = pd.read_csv(class_labels_file)
