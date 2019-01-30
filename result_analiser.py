@@ -5,6 +5,7 @@ import pandas as pd
 import seaborn as sns
 import os
 import shutil
+import argparse
 
 import torch
 import torch.nn as nn
@@ -24,11 +25,24 @@ def mkdir(path):
 
 
 
-# モデル設定
-arch = "resnet18"
-num_classes = 37
-data_dir = "./data"
-batch_size = 256
+parser = argparse.ArgumentParser(description='result analizer')
+parser.add_argument('--data', '-d', metavar='DIR', default='./data',
+                    help='data dir')
+parser.add_argument('--arch', '-a', metavar='ARCH', default='resnet18',
+                    help='model architecture ' +
+                        ' (default: resnet18)')
+parser.add_argument('-c', '--num_classes', default=1000, type=int, metavar='N',
+                    help='number of class (default: 1000)')
+parser.add_argument('-b', '--batch_size', default=48, type=int,
+                        metavar='N', help='mini-batch size (default: 48)')
+args = parser.parse_args()
+
+
+
+arch = args.arch
+num_classes = args.num_classes
+data_dir = args.data
+batch_size = args.batch_size
 workers = 4
 
 mkdir("./result")
@@ -91,10 +105,14 @@ data = pd.concat((test_pred, ans_path), axis=1)
 ########################
 
 # accuracy
-data["pred_lab"] = data.iloc[:,:-2].values.argmax(axis=1)
-acc = (data.pred_lab == data.ans).mean()
+top3_pred = (-data.iloc[:,:-2]).values.argsort(axis=1)[:, :3]
+data["pred_lab"] = top3_pred[:,0]
+is_correct = top3_pred == data.ans.values.reshape(-1,1)
+acc = is_correct[:,0].mean()
+top3_acc = is_correct.max(axis=1).mean()
 f = open('./result/accuracy.txt', 'w')
-f.write(str(acc))
+f.write("top1acc:" + str(acc) + "\n")
+f.write("top3acc:" + str(top3_acc) + "\n")
 f.close()
 
 # 予測ラベルとクラス名対応表
@@ -134,11 +152,11 @@ l = lab_ref.shape[0]
 
 ans_cat = pd.Categorical(data.ans.values, categories=np.arange(l).astype(int))
 pred_cat = pd.Categorical(data.iloc[:,:l].values.argmax(axis=1), categories=np.arange(l).astype(int))
-conf_mat = pd.crosstab(ans_cat, pred_cat) # ans * pred
+conf_mat = pd.crosstab(ans_cat, pred_cat, dropna=False) # ans * pred
 
 nums = conf_mat.values.astype(float)
-prec = np.diag(nums)/nums.sum(axis=0)
-recall = np.diag(nums)/nums.sum(axis=1)
+prec = np.diag(nums)/(nums.sum(axis=0) + 1e-10)
+recall = np.diag(nums)/(nums.sum(axis=1) + 1e-10)
 
 conf_result = np.zeros((l+1, l+1))
 conf_result[:l, :l] = conf_mat.values
