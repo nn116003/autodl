@@ -59,7 +59,7 @@ model.load_state_dict(checkpoint['state_dict'])
 model.eval()
 
 # データセット
-testdir = os.path.join(data_dir, 'val')
+testdir = os.path.join(data_dir, 'test')
 normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                  std=[0.229, 0.224, 0.225])
 test_dataset = ImageFolderWithPath(
@@ -129,7 +129,11 @@ probs = pd.DataFrame(probs)
 probs.columns = lab_ref.name.values
 pred_results = pd.concat([probs, data[["ans", "path","pred_lab"]]], axis=1)
 pred_results.head()
-pred_results.to_csv("./result/prediction.csv", index=False)
+
+pred_results_labname = pred_results.merge(lab_ref, left_on='pred_lab', right_on='id')
+del pred_results_labname['id']
+
+pred_results_labname.to_csv("./result/prediction.csv", index=False)
 
 # 誤判別画像フォルダ
 mkdir("./result/fail_imgs")
