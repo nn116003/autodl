@@ -36,7 +36,8 @@ def predict(img_dir, arch, num_classes, class_labels_file, batch_size=256,
         checkpoint = torch.load(ckpt)
     else:
         checkpoint = torch.load(ckpt, map_location='cpu')
-            
+
+    net.load_state_dict(checkpoint['state_dict'])
     net.eval()
 
     # load label file
@@ -89,8 +90,11 @@ def predict(img_dir, arch, num_classes, class_labels_file, batch_size=256,
     probs.columns = lab_ref.name.values
     pred_results = pd.concat([probs, raw_result[["path","pred_lab"]]], axis=1)
     pred_results.head()
+
+    pred_results_labname = pred_results.merge(lab_ref, left_on='pred_lab', right_on='id')
+    del pred_results_labname['id']
     
-    pred_results.to_csv(output, index=False)
+    pred_results_labname.to_csv(output, index=False)
 
 
 def main():

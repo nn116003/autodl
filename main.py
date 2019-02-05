@@ -309,7 +309,7 @@ def validate(val_loader, model, criterion, epoch, val_writer):
     val_writer.add_p_r(epoch,
                        p_name="data/val_precision_per_class",
                        r_name="data/val_recall_per_class")
-    val_writer.add_wrong_imgs(0) # store only latest img
+#    val_writer.add_wrong_imgs(0) # store only latest img
 #    val_writer.save_data()
     val_writer.reset_val()
     

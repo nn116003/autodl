@@ -41,7 +41,7 @@ class ImageClassifier(object):
            else:
                checkpoint = torch.load(pretrained_model_file, map_location='cpu')
 
-            
+        self.net.load_state_dict(checkpoint['state_dict'])
         self.net.eval()
             
         labels_df = pd.read_csv(class_labels_file)
